@@ -162,4 +162,3 @@ Through this project, I gained hands-on experience with:
 - Linux networking and routing
 - iptables NAT and forwarding rules
 - Secure remote access design
-- 
