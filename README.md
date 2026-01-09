@@ -18,9 +18,9 @@ including key generation, routing, NAT, and tunnel establishment.
 - WireGuard for the VPN 
 - iptables (for NAT and forwarding)
 - Client (my MacBook) tested using the WireGuard desktop application
-
-![Physical Pi](screenshots/frontOfRaspPi.JPG)
-![Physical Pi](screenshots/backOfRaspPi.JPG)
+![Physical Pi3](screenshots/internalRaspPi.JPG)
+![Physical Pi2](screenshots/frontOfRaspPi.JPG)
+![Physical Pi1](screenshots/backOfRaspPi.JPG)
 
 ---
 
