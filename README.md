@@ -136,7 +136,7 @@ The client configuration includes:
 
 The client is configured to route all traffic through the VPN tunnel.
 
-![Tunnel setup](screenshots/wireGuardTunnelSetup.png)
+![Tunnel setup](screenshots/wireGuardAllowedIPs.png)
 
 ---
 
@@ -162,4 +162,3 @@ Through this project, I gained hands-on experience with:
 - Linux networking and routing
 - iptables NAT and forwarding rules
 - Secure remote access design
-- 
