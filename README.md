@@ -150,7 +150,7 @@ At this point:
 - NAT allows outbound internet access
 - The VPN is fully operational
 
-![Tunnel complete](screenshots/wireGuardTunnelComplete.png)
+![Tunnel complete](screenshots/wgRunning.png)
 
 ---
 
