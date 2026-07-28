@@ -118,7 +118,6 @@ The `wg0` interface was configured with:
 
 The interface was then brought up using `wg-quick` and enabled to start on boot.
 
-![WireGuard running](screenshots/wgRunning.png)
 
 ---
 
