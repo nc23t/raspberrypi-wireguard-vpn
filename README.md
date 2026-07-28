@@ -81,7 +81,7 @@ The public key is distributed to clients so they can authenticate the server.
 
 WireGuard uses public-key cryptography for authentication instead of usernames and passwords.
 
-![Generating server keys](screenshots/generatingServerKeys.png)
+
 
 ---
 
