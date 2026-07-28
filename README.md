@@ -92,7 +92,6 @@ Each client must have its own unique key pair.
 
 This allows the server to identify and control each peer individually.
 
-![Generating client keys](screenshots/generatingClientKeys.png)
 
 ---
 
@@ -128,8 +127,6 @@ address within the VPN subnet.
 
 This ensures predictable routing and simplifies management.
 
-![Client assigned](screenshots/clientAssigned.png)
-
 ---
 
 ### 9. Client tunnel configuration
@@ -156,8 +153,6 @@ At this point:
 * Encrypted traffic flows through the tunnel
 * NAT allows outbound internet access
 * The VPN is fully operational
-
-![Tunnel complete](screenshots/wgRunning.png)
 
 ---
 
