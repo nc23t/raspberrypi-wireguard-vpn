@@ -35,11 +35,21 @@ Being explicit about scope matters because a self-hosted VPN is not a substitute
 ## Environment
 
 - Raspberry Pi 4 Model B (4GB RAM)
-- Raspberry Pi OS Lite (64-bit), Debian Bookworm base
+- Raspberry Pi OS Lite (64-bit)
 - WireGuard (`wireguard-tools` package)
 - Pi-hole for DNS-level ad blocking
 - `iptables` for NAT and packet forwarding
 - Clients: iPhone (WireGuard iOS app) and MacBook (WireGuard desktop app)
+
+## The Hardware
+
+The build uses a stock Raspberry Pi 4 in a passively cooled case. No modifications, no HATs, just a stable base for a network service that needs to run 24/7.
+
+![Front of the Raspberry Pi](screenshots/frontOfRaspPi.JPG)
+
+![Back of the Raspberry Pi](screenshots/backOfRaspPi.JPG)
+
+![Internal view of the Raspberry Pi](screenshots/internalRaspPi.JPG)
 
 ---
 
@@ -84,7 +94,49 @@ Breakdown:
 
 After the upgrade finished I rebooted with `sudo reboot` to pick up any kernel updates.
 
-### 2. Installing WireGuard
+### 2. Configure a static LAN IP
+
+The Pi needs a static IP on the home network so the router's port forward (UDP 51820 to the Pi) keeps working after reboots. If the Pi ever grabs a new DHCP address, the port forward rule points to the wrong host and all inbound VPN traffic gets dropped silently.
+
+I set this by editing `/etc/dhcpcd.conf`:
+
+```bash
+sudo nano /etc/dhcpcd.conf
+```
+
+- `sudo` because `/etc/dhcpcd.conf` is root-owned.
+- `nano` opens the file for editing in a simple terminal editor.
+
+At the bottom of the file I added:
+
+```
+interface eth0
+static ip_address=192.168.1.X/24
+static routers=192.168.1.1
+static domain_name_servers=8.8.8.8
+```
+
+Line by line:
+
+- `interface eth0` specifies which network interface these settings apply to. `eth0` is the wired Ethernet port. Use `wlan0` if the Pi is connected via Wi-Fi.
+- `static ip_address` sets the Pi's LAN IP. The `/24` is the subnet mask in CIDR notation (equivalent to `255.255.255.0`).
+- `static routers` is the default gateway, usually your home router's LAN IP.
+- `static domain_name_servers=8.8.8.8` is a temporary upstream DNS setting used before Pi-hole is running. Once Pi-hole is installed, the Pi will resolve through it.
+
+![Static IP configuration in dhcpcd.conf](screenshots/dhcpcdConfiguration.png)
+
+Save with `Ctrl+O`, Enter, then `Ctrl+X` to exit. Apply the change:
+
+```bash
+sudo systemctl restart dhcpcd
+```
+
+- `systemctl restart <service>` stops and starts a systemd-managed service.
+- `dhcpcd` is the DHCP client daemon that manages IP address assignment.
+
+Newer Raspberry Pi OS releases ship with NetworkManager instead of `dhcpcd`. On those systems the equivalent workflow uses `nmcli` or a DHCP reservation on the router side. The end result (a stable LAN IP for the Pi) is the same.
+
+### 3. Installing WireGuard
 
 ```bash
 sudo apt install wireguard -y
@@ -103,7 +155,7 @@ wg --version
 - `wg` is the primary WireGuard CLI tool.
 - `--version` prints the installed version and exits. Useful as a quick smoke test before you start configuring.
 
-### 3. Installing iptables
+### 4. Installing iptables
 
 ```bash
 sudo apt install iptables -y
@@ -113,7 +165,7 @@ sudo apt install iptables -y
 
 Modern Debian ships with `nftables` as the default backend, but the `iptables` command still works via the `iptables-nft` translation layer, so the classic rules used by WireGuard's `PostUp` hooks continue to function.
 
-### 4. Generating server keys
+### 5. Generating server keys
 
 WireGuard uses public-key cryptography (Curve25519) instead of shared secrets or usernames and passwords. Each peer, server or client, has a private key that never leaves the device and a public key that gets shared with everyone it wants to talk to.
 
@@ -135,6 +187,8 @@ Breakdown:
 
 End result: two files under `/etc/wireguard/`, one holding the private key (locked to owner-only) and one holding the public key (shareable).
 
+![Generating server keys](screenshots/generatingServerKeys.png)
+
 Sanity check that the private key is not world-readable:
 
 ```bash
@@ -143,7 +197,7 @@ sudo ls -l /etc/wireguard/server_private.key
 
 Expected output should show `-rw-------` at the start of the line.
 
-### 5. Generating client keys
+### 6. Generating client keys
 
 Each client device gets its own unique keypair. Reusing a keypair across devices is a bad habit because if one device is compromised, you want the ability to revoke just that peer instead of everything.
 
@@ -158,7 +212,9 @@ Same breakdown as the server keys, just with different filenames. I generated se
 
 The client's **private key** eventually goes into the client's WireGuard config file. The client's **public key** goes into the server's config as an authorized peer.
 
-### 6. Enabling IP forwarding
+![Generating client keys](screenshots/generatingClientKeys.png)
+
+### 7. Enabling IP forwarding
 
 By default, the Linux kernel drops packets that arrive on one interface and are destined for another. That is a good security default for a workstation, but for a router or VPN gateway it has to be turned off.
 
@@ -175,6 +231,8 @@ Inside the file, I uncommented (removed the leading `#` from) this line:
 ```
 net.ipv4.ip_forward=1
 ```
+
+![Enabling IP forwarding in sysctl.conf](screenshots/enablingPortForwarding.png)
 
 Then applied it without rebooting:
 
@@ -196,7 +254,7 @@ Expected output: `1`.
 - `cat` prints file contents to stdout.
 - `/proc/sys/net/ipv4/ip_forward` is the kernel's runtime interface for this setting. `0` means forwarding is off, `1` means on. Writing directly here would also work at runtime but would not persist across a reboot, which is why we edit `sysctl.conf`.
 
-### 7. WireGuard interface configuration
+### 8. WireGuard interface configuration
 
 I created the server's configuration file:
 
@@ -245,6 +303,8 @@ On the `[Peer]` blocks:
 - `PublicKey` is the client's public key, used to authenticate the client.
 - `AllowedIPs = 10.86.12.2/32` is a `/32` (single host) address. On the server side, `AllowedIPs` acts as a routing rule: any packet destined for this address gets encrypted and sent to this peer, and any packet arriving from this peer must have a source address in this range or WireGuard drops it. This is what "cryptokey routing" means in practice, and it is why WireGuard does not need a separate firewall to prevent peer address spoofing.
 
+![WireGuard AllowedIPs configuration](screenshots/wireGuardAllowedIPs.png)
+
 Bring the interface up and enable it at boot:
 
 ```bash
@@ -263,9 +323,11 @@ sudo wg show
 
 - `wg show` prints the current status of all WireGuard interfaces, listing each peer, the last handshake time, and bytes transferred in each direction. If a peer has connected recently, its endpoint and handshake timestamp will appear here.
 
-### 8. Assigning client IPs and peers
+### 9. Assigning client IPs and peers
 
-Each client I added required two edits: appending a `[Peer]` block to `/etc/wireguard/wg0.conf` on the server (shown above), and building a client-side config (shown in step 9).
+Each client I added required two edits: appending a `[Peer]` block to `/etc/wireguard/wg0.conf` on the server (shown above), and building a client-side config (shown in step 10).
+
+![Client peer assigned to server config](screenshots/clientAssigned.png)
 
 After editing the server config, I reloaded the peer list without dropping existing tunnels:
 
@@ -277,7 +339,7 @@ sudo wg syncconf wg0 <(wg-quick strip wg0)
 - `wg-quick strip wg0` reads `/etc/wireguard/wg0.conf` and prints just the parts that `wg` understands, stripping out `PostUp`, `PostDown`, and other `wg-quick`-only directives.
 - `<(...)` is bash process substitution, treating the output of the command as a file that `wg syncconf` can read.
 
-### 9. Client tunnel configuration
+### 10. Client tunnel configuration
 
 Each client device gets a config file that mirrors the server's view of the tunnel:
 
@@ -314,9 +376,15 @@ qrencode -t ansiutf8 < /etc/wireguard/iphone.conf
 
 The WireGuard iOS app has a "Scan QR code" option that reads it directly from the terminal window. After scanning, immediately clear the terminal (`clear` or `Ctrl-L`) so the config does not sit in scrollback.
 
-### 10. Tunnel established successfully
+### 11. Tunnel established successfully
 
-Once the client activates its tunnel, running `sudo wg show` on the Pi shows a recent handshake time and byte counters climbing. From the client, a quick check confirms traffic is actually flowing through the VPN:
+Once the client activates its tunnel, running `sudo wg show` on the Pi shows a recent handshake time and byte counters climbing.
+
+![WireGuard tunnel active](screenshots/wireGuardTunnelComeplte.png)
+
+![wg show output confirming an established peer](screenshots/wgRunning.png)
+
+From the client, a quick check confirms traffic is actually flowing through the VPN:
 
 ```bash
 curl -s https://ifconfig.me
@@ -356,10 +424,15 @@ curl -sSL https://install.pi-hole.net | bash
 
 Piping a `curl`'d script into `bash` is convenient but not a habit I would recommend for higher-trust environments. For a personal lab it is fine. For anything I care about I download the script first, review it, then run it.
 
-During install I chose:
+During install I chose an upstream DNS provider and a listening interface.
 
-- **Upstream DNS provider:** Cloudflare (`1.1.1.1` / `1.0.0.1`).
-- **Listening interface:** `wg0` only.
+**Upstream DNS provider: Cloudflare (`1.1.1.1` / `1.0.0.1`).**
+
+![Selecting the upstream DNS provider](screenshots/slectingDNSProvider.png)
+
+**Listening interface: `wg0` only.**
+
+![Selecting the listening interface](screenshots/selectingInterface.png)
 
 The listening interface choice is important. If Pi-hole is bound to `eth0` or "all interfaces," and the Pi's WAN port ever gets exposed, it becomes an open resolver. That is both a DDoS amplification risk and a violation of most ISP terms of service.
 
@@ -376,13 +449,23 @@ sudo netstat -tulnp | grep pihole-FTL
 
 The output should show sockets bound to `10.86.12.1:53`, not `0.0.0.0:53`.
 
+### Verifying Pi-hole is running
+
+After installation, the Pi-hole admin dashboard is reachable at `http://10.86.12.1/admin` from any client connected to the VPN.
+
+![Pi-hole admin dashboard](screenshots/piHoleDash.png)
+
+The `pihole status` command gives a quick CLI-side confirmation that the service is up and blocking queries:
+
+![Pi-hole service status](screenshots/piholeStatus.png)
+
 ### Client config change
 
 I updated each client's WireGuard config to set `DNS = 10.86.12.1`. When the client connects, its system DNS is temporarily overridden to point at Pi-hole through the tunnel.
 
 ### Troubleshooting
 
-The main issue during setup was DNS resolution failing when traffic flowed VPN → Pi-hole → upstream. Symptoms: tunnels came up cleanly, `ping 10.86.12.1` from the client worked, but browser page loads hung.
+The main issue during setup was DNS resolution failing when traffic flowed VPN to Pi-hole to upstream. Symptoms: tunnels came up cleanly, `ping 10.86.12.1` from the client worked, but browser page loads hung.
 
 Root cause: Pi-hole's `dnsmasq` config was still bound to loopback only, not `wg0`. Fixed by editing `/etc/pihole/pihole-FTL.conf` and setting:
 
@@ -440,6 +523,12 @@ The server distinguishes peers by public key, not by IP or connection order. Two
 | MacBook | 10.86.12.2 |
 | iPhone  | 10.86.12.3 |
 
+### Verifying both peers
+
+`sudo wg show` on the Pi lists every configured peer along with its most recent handshake time and byte counters. With both clients connected, both peers show recent activity:
+
+![wg show output with two active peers](screenshots/terminalWgshow.png)
+
 ### Adding a new client
 
 1. Generate a new keypair for the client:
@@ -489,7 +578,7 @@ A few operational practices I applied that are not obvious from the config alone
 - **`fail2ban` monitors auth logs** and drops sources that repeatedly fail to authenticate.
 - **`unattended-upgrades` is enabled** so security patches apply automatically.
 - **Key rotation policy.** Any keypair that touches development gets rotated before the setup is documented publicly. Old keys are removed from every peer's config and the interface is reloaded with `wg syncconf`.
-- **No secrets in the repo.** All example configs use placeholders. Screenshots that would have shown key material during generation were removed intentionally.
+- **Screenshots are sanitized before commit.** All key material, real public IPs, and internal LAN addresses are redacted from any screenshot in this repository.
 
 ---
 
