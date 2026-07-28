@@ -242,8 +242,6 @@ AllowedIPs = 0.0.0.0/0
 Endpoint = <server-public-ip>:51820
 ```
 
-![Active peers](screenshots/terminalWgshow.png)
-
 ---
 
 ## Learning Outcomes
